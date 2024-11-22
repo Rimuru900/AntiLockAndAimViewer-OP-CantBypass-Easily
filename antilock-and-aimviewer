@@ -1,0 +1,183 @@
+local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local UserInputService = game:GetService("UserInputService")
+local TweenService = game:GetService("TweenService")
+local RunService = game:GetService("RunService")
+local Workspace = game:GetService("Workspace")
+
+-- Variables
+local player = Players.LocalPlayer
+local mouse = player:GetMouse()
+local screenGui = Instance.new("ScreenGui")
+screenGui.Parent = player:WaitForChild("PlayerGui")
+
+-- Tab Size for Mobile and PC users
+local tabWidth = 180
+local tabHeight = 150
+
+-- Create the draggable tab for mobile and PC users
+local tabFrame = Instance.new("Frame")
+tabFrame.Size = UDim2.new(0, tabWidth, 0, tabHeight)  -- Smaller tab size
+tabFrame.Position = UDim2.new(0, 50, 0, 50)  -- Default position
+tabFrame.BackgroundColor3 = Color3.fromRGB(211, 211, 211)  -- Light grey background
+tabFrame.BorderSizePixel = 2
+tabFrame.BorderColor3 = Color3.fromRGB(0, 255, 255)  -- Cyan border
+tabFrame.Parent = screenGui
+
+-- Draggable functionality
+local dragging = false
+local dragStart = nil
+local startPos = nil
+
+local function updateDrag(input)
+    if dragging then
+        local delta = input.Position - dragStart
+        tabFrame.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+    end
+end
+
+local function onInputBegan(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 then
+        dragging = true
+        dragStart = input.Position
+        startPos = tabFrame.Position
+    end
+end
+
+local function onInputEnded(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 then
+        dragging = false
+    end
+end
+
+UserInputService.InputBegan:Connect(onInputBegan)
+UserInputService.InputEnded:Connect(onInputEnded)
+RunService.Heartbeat:Connect(updateDrag)
+
+-- Title for the tab
+local titleLabel = Instance.new("TextLabel")
+titleLabel.Size = UDim2.new(1, 0, 0, 25)  -- Title height
+titleLabel.Text = "4x Daddy"
+titleLabel.TextColor3 = Color3.fromRGB(255, 255, 255)  -- White text
+titleLabel.TextSize = 14
+titleLabel.BackgroundTransparency = 1
+titleLabel.Parent = tabFrame
+
+-- Toggle buttons for Aim Viewer and Anti-Lock
+local function createToggleButton(name, position, toggleFunction)
+    local button = Instance.new("TextButton")
+    button.Size = UDim2.new(1, -20, 0, 30)
+    button.Position = position
+    button.Text = name
+    button.TextColor3 = Color3.fromRGB(255, 255, 255)  -- White text
+    button.BackgroundColor3 = Color3.fromRGB(211, 211, 211)  -- Light grey background
+    button.TextSize = 12
+    button.Parent = tabFrame
+
+    button.MouseButton1Click:Connect(toggleFunction)
+
+    return button
+end
+
+-- Anti-Lock feature with strong resistance
+local antiLockEnabled = false
+local aimViewerEnabled = false
+
+local function toggleAntiLock()
+    antiLockEnabled = not antiLockEnabled
+    print("Anti-Lock: " .. (antiLockEnabled and "Enabled" or "Disabled"))
+end
+
+local function toggleAimViewer()
+    aimViewerEnabled = not aimViewerEnabled
+    print("Aim Viewer: " .. (aimViewerEnabled and "Enabled" or "Disabled"))
+end
+
+-- Anti-Lock Resistance: Adding jitter and randomized rotation speed
+local function applyStrongerAntiLockRotation(otherPlayer)
+    if antiLockEnabled then
+        local jitter = math.random(-10, 10) / 1000  -- Random jitter factor
+        local randomRotationSpeed = math.random(5, 15) / 100  -- Randomize rotation speed
+
+        -- Add small random angle changes to make the Anti-Lock harder to counter
+        local goal = CFrame.new(camera.CFrame.Position) * CFrame.Angles(math.rad(-90 + jitter), math.rad(jitter), 0)
+        local tween = TweenService:Create(camera, TweenInfo.new(randomRotationSpeed, Enum.EasingStyle.Linear, Enum.EasingDirection.InOut), {CFrame = goal})
+        tween:Play()
+        
+        -- Print the randomized effects for debugging
+        print("Anti-Lock rotation applied with jitter:", jitter, " and speed:", randomRotationSpeed)
+    end
+end
+
+-- Bullet direction locking
+local function handleBulletFire(bullet, playerWhoFired)
+    if antiLockEnabled and playerWhoFired ~= player then
+        local cameraDirection = camera.CFrame.LookVector
+        bullet.CFrame = CFrame.new(camera.CFrame.Position)
+        bullet.Velocity = cameraDirection * 100  -- Bullet speed factor (100)
+        -- Print debug info
+        print("Bullet redirected to direction:", cameraDirection)
+    end
+end
+
+-- Detect if another player is locking onto you
+local function isLockedOnToPlayer(otherPlayer)
+    local character = otherPlayer.Character
+    if not character then return false end
+    
+    local humanoidRootPart = character:FindFirstChild("HumanoidRootPart")
+    if not humanoidRootPart then return false end
+    
+    -- Raycast from camera to humanoid root part
+    local rayOrigin = camera.CFrame.Position
+    local rayDirection = (humanoidRootPart.Position - rayOrigin).unit * 500
+    local raycastResult = workspace:Raycast(rayOrigin, rayDirection)
+    
+    -- Debugging raycast
+    if raycastResult then
+        print("Raycast hit: " .. tostring(raycastResult.Instance))
+    else
+        print("Raycast did not hit anything.")
+    end
+    
+    if raycastResult and raycastResult.Instance and raycastResult.Instance.Parent == character then
+        return true
+    end
+    return false
+end
+
+-- Apply Anti-Lock to players locking on you
+local function applyAntiLockRotationTo(otherPlayer)
+    if antiLockEnabled then
+        -- Apply jitter and random speed rotation
+        applyStrongerAntiLockRotation(otherPlayer)
+    end
+end
+
+-- Simulate bullet direction for testing
+local function simulateBulletFire(playerWhoFired)
+    local bullet = Instance.new("Part")
+    bullet.Size = Vector3.new(0.5, 0.5, 2)
+    bullet.Shape = Enum.PartType.Ball
+    bullet.Color = Color3.fromRGB(255, 0, 0)  -- Red bullet
+    bullet.Position = camera.CFrame.Position + camera.CFrame.LookVector * 2
+    bullet.Parent = Workspace
+
+    -- Adjust bullet direction based on Anti-Lock system
+    handleBulletFire(bullet, playerWhoFired)
+end
+
+-- Detect lock-ons in the game
+local function detectLockOns()
+    for _, otherPlayer in ipairs(Players:GetPlayers()) do
+        if otherPlayer ~= player and isLockedOnToPlayer(otherPlayer) then
+            applyAntiLockRotationTo(otherPlayer)
+        end
+    end
+end
+
+-- Run the detection loop
+RunService.Heartbeat:Connect(detectLockOns)
+
+-- Test bullet firing simulation
+simulateBulletFire(Players.LocalPlayer)  -- Simulate firing by the local player
